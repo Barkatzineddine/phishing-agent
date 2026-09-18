@@ -116,4 +116,4 @@ environnement isolé.
 
 ## Auteur
 
-Mohamed Zineddine Barkat — étudiant en Master Conception de Systèmes et Cybersécurité (UPEC)
+Mohamed Zineddine Barkat - étudiant en Master Conception de Systèmes et Cybersécurité (UPEC)
