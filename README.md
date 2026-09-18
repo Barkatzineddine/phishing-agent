@@ -1,12 +1,12 @@
 # Agent IA de triage de phishing
 
-Agent IA local qui trie les emails suspects comme le ferait un analyste SOC de niveau 1 :
+Agent IA qui trie les emails suspects comme le ferait un analyste SOC de niveau 1 :
 il analyse les en-têtes d'authentification (SPF, DKIM, DMARC), extrait les URL et les pièces
 jointes, décide lui-même de vérifier les IOC via l'API VirusTotal, puis génère un rapport
 d'incident avec verdict, niveau de risque et actions recommandées.
 
-Le LLM tourne **en local** (Ollama) : aucun contenu d'email n'est envoyé à un service tiers,
-seuls les IOC (URL et hash) sont soumis à VirusTotal.
+Le LLM tourne via l'**API Groq** (gratuite, très rapide). Seuls les IOC extraits (URL et hash,
+jamais le contenu de l'email) sont envoyés au LLM et à VirusTotal pour analyse.
 
 ## Pourquoi ce projet
 
@@ -31,7 +31,7 @@ email.eml
     │
     ├─► Extraction (Python)  ──► en-têtes, SPF/DKIM/DMARC, URL, pièces jointes (SHA256)
     │
-    ├─► Agent LLM (Ollama)   ──► décide des vérifications à effectuer
+    ├─► Agent LLM (API Groq) ──► décide des vérifications à effectuer
     │        │
     │        └─► Outils ──► API VirusTotal (réputation URL / hash)
     │
@@ -41,21 +41,30 @@ email.eml
 ## Installation
 
 ```bash
-git clone https://github.com/<ton-compte>/phishing-agent.git
+git clone https://github.com/Barkatzineddine/phishing-agent.git
 cd phishing-agent
 pip install -r requirements.txt
 ```
 
-Installer [Ollama](https://ollama.com) puis télécharger un modèle compatible avec le *tool calling* :
+Créer un compte gratuit sur [Groq Console](https://console.groq.com), générer une clé API,
+puis l'exporter :
 
 ```bash
-ollama pull llama3.1
+export GROQ_API_KEY="votre_cle_api"
 ```
 
-Créer un compte gratuit sur [VirusTotal](https://www.virustotal.com) et exporter la clé API :
+Créer un compte gratuit sur [VirusTotal](https://www.virustotal.com), récupérer sa clé API
+(Profil → API key), puis l'exporter :
 
 ```bash
 export VT_API_KEY="votre_cle_api"
+```
+
+Sur Windows (invite de commande) :
+
+```cmd
+set GROQ_API_KEY=votre_cle_api
+set VT_API_KEY=votre_cle_api
 ```
 
 ## Utilisation
@@ -88,7 +97,8 @@ verdict, niveau de risque, IOC, raisons et actions recommandées.
   15 secondes entre chaque appel
 - Le nombre d'URL analysées est plafonné à 10 par email
 - Le verdict d'un LLM reste indicatif et doit être validé par un analyste
-- Les performances dépendent du modèle utilisé et du matériel (environ 8 Go de RAM)
+- Le modèle utilisé (`openai/gpt-oss-20b` via Groq) dépend de la disponibilité de l'offre
+  gratuite de Groq, qui peut évoluer
 
 ## Améliorations prévues
 
@@ -96,6 +106,7 @@ verdict, niveau de risque, IOC, raisons et actions recommandées.
 - Ajout d'une source d'enrichissement supplémentaire (AbuseIPDB, URLhaus)
 - Mapping des techniques observées sur **MITRE ATT&CK**
 - Export du rapport au format JSON pour ingestion dans un SIEM
+- Ajout d'un mode LLM local (Ollama) en alternative à l'API Groq
 
 ## Avertissement
 
@@ -105,4 +116,4 @@ environnement isolé.
 
 ## Auteur
 
-Mohamed Zineddine Barkat - étudiant en Master Conception de Systèmes et Cybersécurité (UPEC)
+Mohamed Zineddine Barkat — étudiant en Master Conception de Systèmes et Cybersécurité (UPEC)
