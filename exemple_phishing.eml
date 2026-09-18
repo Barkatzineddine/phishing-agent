@@ -1,0 +1,19 @@
+From: "PayPal Support" <support@paypa1-secure.com>
+Return-Path: <bounce@evil.ru>
+Reply-To: hacker@evil.ru
+Subject: Votre compte est suspendu
+Authentication-Results: mx.google.com; spf=fail smtp.mailfrom=evil.ru; dkim=none; dmarc=fail
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="XX"
+
+--XX
+Content-Type: text/html; charset=utf-8
+
+<p>Cliquez <a href="http://paypa1-secure.com/login?id=1">ici</a></p>
+--XX
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="facture.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA
+--XX--
