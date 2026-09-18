@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
+"""
+Agent IA d'analyse de phishing
+- Extrait les en-têtes (SPF, DKIM, DMARC), les URL et les pièces jointes d'un fichier .eml
+- Un LLM (API Groq, gratuite) décide lui-même quand vérifier les IOC via l'API VirusTotal
+- Génère un rapport Markdown avec verdict et niveau de risque
 
+Usage :
+    export VT_API_KEY="ta_cle_virustotal"
+    export GROQ_API_KEY="ta_cle_groq"
+    python agent_phishing.py email_suspect.eml
+"""
 import base64
 import hashlib
 import json
@@ -13,12 +23,16 @@ from email.parser import BytesParser
 
 import requests
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
-MODELE = "llama3.1"  
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_KEY = os.environ.get("GROQ_API_KEY")
+MODELE = "openai/gpt-oss-20b"  # modèle compatible avec le "tool calling"
 VT_KEY = os.environ.get("VT_API_KEY")
 VT_BASE = "https://www.virustotal.com/api/v3"
 
 
+# ---------------------------------------------------------------------------
+# 1. Extraction des informations de l'email
+# ---------------------------------------------------------------------------
 def extraire_email(chemin):
     with open(chemin, "rb") as f:
         msg = BytesParser(policy=policy.default).parse(f)
@@ -59,12 +73,15 @@ def extraire_email(chemin):
     }
 
 
+# ---------------------------------------------------------------------------
+# 2. Outils que l'agent peut appeler (VirusTotal)
+# ---------------------------------------------------------------------------
 def _vt_get(endpoint):
     if not VT_KEY:
         return {"erreur": "VT_API_KEY non définie"}
     try:
         r = requests.get(f"{VT_BASE}/{endpoint}", headers={"x-apikey": VT_KEY}, timeout=30)
-        time.sleep(15)  
+        time.sleep(15)  # offre gratuite : 4 requêtes par minute
         if r.status_code == 404:
             return {"resultat": "inconnu de VirusTotal"}
         r.raise_for_status()
@@ -118,7 +135,9 @@ TOOLS = [
 ]
 
 
-
+# ---------------------------------------------------------------------------
+# 3. Boucle agentique : le LLM décide quels outils utiliser
+# ---------------------------------------------------------------------------
 SYSTEME = """Tu es un analyste SOC spécialisé dans le phishing.
 Analyse l'email fourni. Utilise les outils pour vérifier les URL et les pièces jointes
 qui te semblent suspectes. Tiens compte des résultats SPF/DKIM/DMARC et des incohérences
@@ -132,18 +151,26 @@ Réponds en français, en Markdown, avec exactement ces sections :
 
 
 def agent(infos, max_tours=8):
+    if not GROQ_KEY:
+        return "Erreur : la variable GROQ_API_KEY n'est pas définie."
+
     messages = [
         {"role": "system", "content": SYSTEME},
         {"role": "user", "content": "Analyse cet email :\n" + json.dumps(infos, ensure_ascii=False, indent=2)},
     ]
+    headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
+
     for _ in range(max_tours):
         r = requests.post(
-            OLLAMA_URL,
-            json={"model": MODELE, "messages": messages, "tools": TOOLS, "stream": False},
-            timeout=600,
+            GROQ_URL,
+            headers=headers,
+            json={"model": MODELE, "messages": messages, "tools": TOOLS, "tool_choice": "auto"},
+            timeout=120,
         )
+        if not r.ok:
+            print(f"[erreur Groq {r.status_code}] {r.text}")
         r.raise_for_status()
-        msg = r.json()["message"]
+        msg = r.json()["choices"][0]["message"]
         messages.append(msg)
 
         appels = msg.get("tool_calls") or []
@@ -152,7 +179,7 @@ def agent(infos, max_tours=8):
 
         for appel in appels:
             nom = appel["function"]["name"]
-            args = appel["function"].get("arguments") or {}
+            args = appel["function"].get("arguments") or "{}"
             if isinstance(args, str):
                 args = json.loads(args)
             print(f"[agent] appel de l'outil {nom} {args}")
@@ -160,12 +187,20 @@ def agent(infos, max_tours=8):
                 resultat = OUTILS[nom](**args)
             except Exception as e:
                 resultat = {"erreur": str(e)}
-            messages.append({"role": "tool", "tool_name": nom, "content": json.dumps(resultat, ensure_ascii=False)})
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": appel["id"],
+                    "content": json.dumps(resultat, ensure_ascii=False),
+                }
+            )
 
     return "Analyse interrompue : nombre maximal d'appels d'outils atteint."
 
 
-
+# ---------------------------------------------------------------------------
+# 4. Rapport
+# ---------------------------------------------------------------------------
 def main():
     if len(sys.argv) != 2:
         print("Usage : python agent_phishing.py fichier.eml")
